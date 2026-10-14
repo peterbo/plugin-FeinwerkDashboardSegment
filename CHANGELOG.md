@@ -2,7 +2,7 @@
 
 ## 0.7.0
 
-- Dashboard sharing has moved to the separate free plugin FeinwerkDashboardSharing — install it to keep
+- Dashboard sharing has moved to the separate free plugin FeinwerkDashboardSharing. Install it to keep
   sharing. No change to the segmentation features or your data.
 
 ## 0.6.0
@@ -19,7 +19,7 @@
   dashboard widget header to a new Vue component. The buttons are now placed in the new header
   (with a fallback to the old header on Matomo 5.13 and earlier).
 - The segment picker is now searchable (type to filter the segments) and has a "New segment" entry
-  that opens Matomo's segment editor — for both the per-widget picker and the dashboard default.
+  that opens Matomo's segment editor, for both the per-widget picker and the dashboard default.
 - Dark mode: all plugin controls (segment and time-range pickers, the menus, the share dialog,
   chips and the "synced" banner) now follow Matomo's theme and are legible in dark mode.
 - Fixed: a dashboard you had shared is no longer offered or synced after you delete it (its share is
