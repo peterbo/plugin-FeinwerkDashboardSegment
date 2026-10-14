@@ -1,14 +1,14 @@
 # FeinwerkDashboardSegment
 
-Choose and persist a **Matomo segment per dashboard widget** — with a dashboard-wide default
+Choose and persist a **Matomo segment per dashboard widget**, with a dashboard-wide default
 that individual widgets can override or opt out of.
 
 Matomo's dashboards only support **one global segment** applied to every widget at once. That
-makes mixed dashboards impossible — e.g. an "LLM / AI analysis" dashboard where most widgets
+makes mixed dashboards impossible, e.g. an "LLM / AI analysis" dashboard where most widgets
 should use an *AI Referrer* segment, but the AI‑chatbot widgets must show **all** data (they have
 no AI referrer by definition). FeinwerkDashboardSegment fixes that.
 
-> Dashboard sharing is now a separate free plugin, **FeinwerkDashboardSharing** — install it if you want
+> Dashboard sharing is now a separate free plugin, **FeinwerkDashboardSharing**. Install it if you want
 > to share dashboards.
 
 ## Description
@@ -51,14 +51,14 @@ Precedence: `per‑widget override (server‑rendered widgets)  >  dashboard def
 
 ## How it works (no core patches)
 
-The plugin is purely additive — it never modifies Matomo core or the bundled Dashboard plugin,
+The plugin is purely additive: it never modifies Matomo core or the bundled Dashboard plugin,
 so it survives Matomo updates:
 
 - It wraps the global `widgetsHelper.loadWidgetAjax` (the single function every widget request
   flows through) and rewrites the `segment` request parameter per widget instance.
 - A **dashboard default** is applied by setting Matomo's global segment through the same hash-only
   mechanism the native segment selector uses on a reporting page (`CoreHome.MatomoUrl.updateHash`,
-  no full page reload), so every widget — including reactive ones that bypass the wrapper — filters
+  no full page reload), so every widget (including reactive ones that bypass the wrapper) filters
   by it; the plugin restores the segment you had before when you leave the dashboard.
 - Each widget instance is tagged with a stable id stored in the dashboard layout (via the
   Dashboard plugin's own save), so duplicated widgets stay distinguishable.
@@ -101,7 +101,7 @@ Do not uninstall `DashboardSegment` yourself.
 
 ## Known limitations / roadmap
 
-- **A dashboard default filters the whole dashboard** — including reactive / live widgets
+- **A dashboard default filters the whole dashboard**, including reactive / live widgets
   (evolution graphs, KPI / single‑metric widgets, sparklines, the **Live!** widget, the visitor
   map). Opening a dashboard whose default is a segment activates that segment as Matomo's **global**
   segment (it also shows in the native segment selector) and restores your previous segment when you
@@ -123,4 +123,4 @@ GPL v3 or later.
 
 ## Author
 
-Peter Boehlke — [Feinwerk.io](https://feinwerk.io) · support@feinwerk.io
+Peter Boehlke, [Feinwerk.io](https://feinwerk.io) · support@feinwerk.io
