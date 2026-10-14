@@ -1,0 +1,25 @@
+{
+    "FeinwerkDashboardSegment": {
+        "PluginDescription": "Choose and persist a Matomo segment per dashboard widget.",
+        "SharingMovedNotice": "Dashboard sharing has moved to the separate free plugin FeinwerkDashboardSharing. Install it to keep sharing your dashboards.",
+        "PickSegment": "Segment for this widget",
+        "InheritDefault": "Inherit dashboard default",
+        "NoSegment": "No segment (all data)",
+        "DashboardDefaultSegment": "Dashboard default segment",
+        "CustomSegment": "Custom segment",
+        "RemoveSegment": "Remove segment (show all data)",
+        "PickPeriod": "Time range for this widget",
+        "InheritPeriod": "Inherit dashboard range",
+        "RemovePeriod": "Remove time range (inherit dashboard)",
+        "PeriodToday": "Today",
+        "PeriodYesterday": "Yesterday",
+        "PeriodLast7": "Last 7 days",
+        "PeriodLast30": "Last 30 days",
+        "PeriodWeek": "This week",
+        "PeriodMonth": "This month",
+        "PeriodYear": "This year",
+        "SaveError": "Could not save your change. Please try again.",
+        "NewSegment": "New segment",
+        "SearchSegments": "Search segments"
+    }
+}

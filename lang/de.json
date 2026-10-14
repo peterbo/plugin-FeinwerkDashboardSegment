@@ -1,0 +1,25 @@
+{
+    "FeinwerkDashboardSegment": {
+        "PluginDescription": "Wählen und speichern Sie ein Matomo-Segment pro Dashboard-Widget.",
+        "SharingMovedNotice": "Das Teilen von Dashboards ist in das separate, kostenlose Plugin FeinwerkDashboardSharing umgezogen. Installieren Sie es, um Ihre Dashboards weiterhin zu teilen.",
+        "PickSegment": "Segment für dieses Widget",
+        "InheritDefault": "Dashboard-Standard übernehmen",
+        "NoSegment": "Kein Segment (alle Daten)",
+        "DashboardDefaultSegment": "Standardsegment des Dashboards",
+        "CustomSegment": "Eigenes Segment",
+        "RemoveSegment": "Segment entfernen (alle Daten anzeigen)",
+        "PickPeriod": "Zeitraum für dieses Widget",
+        "InheritPeriod": "Zeitraum des Dashboards übernehmen",
+        "RemovePeriod": "Zeitraum entfernen (Dashboard-Zeitraum übernehmen)",
+        "PeriodToday": "Heute",
+        "PeriodYesterday": "Gestern",
+        "PeriodLast7": "Letzte 7 Tage",
+        "PeriodLast30": "Letzte 30 Tage",
+        "PeriodWeek": "Diese Woche",
+        "PeriodMonth": "Dieser Monat",
+        "PeriodYear": "Dieses Jahr",
+        "SaveError": "Ihre Änderung konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+        "NewSegment": "Neues Segment",
+        "SearchSegments": "Segment suchen"
+    }
+}

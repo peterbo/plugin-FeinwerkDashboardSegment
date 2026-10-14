@@ -1,0 +1,29 @@
+{
+    "name": "FeinwerkDashboardSegment",
+    "version": "0.7.0",
+    "description": "Give every dashboard widget its own segment, plus a dashboard-wide default segment that filters the whole dashboard.",
+    "keywords": [
+        "dashboard",
+        "segment",
+        "widget",
+        "compare",
+        "segments"
+    ],
+    "license": "GPL v3+",
+    "homepage": "https://feinwerk.io",
+    "authors": [
+        {
+            "name": "Peter Boehlke, Feinwerk.io",
+            "email": "support@feinwerk.io",
+            "homepage": "https://feinwerk.io"
+        }
+    ],
+    "require": {
+        "matomo": ">=5.0.0-b4,<6.0.0-b1"
+    },
+    "category": "customisation",
+    "support": {
+        "email": "support@feinwerk.io",
+        "docs": "https://plugins.feinwerk.io/en/docs/plugins/FeinwerkDashboardSegment"
+    }
+}

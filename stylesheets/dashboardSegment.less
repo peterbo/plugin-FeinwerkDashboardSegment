@@ -1,0 +1,187 @@
+// Dark-mode-aware styling without Matomo's own LESS theme variables or `.inDarkMode()` mixin:
+// those only exist from Matomo 5.10–5.12, and this plugin supports Matomo >= 5.0 (plugin.json). An
+// undefined LESS variable/mixin aborts Matomo's whole merged stylesheet (safe mode), so instead we
+// use CSS custom properties with literal light fallbacks — var(--theme-color-*, #light) resolves to
+// the theme value when present (dark values are provided by core under [data-theme-mode="dark"]) and
+// to the fallback otherwise — plus this local mixin for accent/status colours that have no theme var.
+// Verified across Matomo 5.3.2 / 5.11.2 / 5.14 with tests/lesscheck.php.
+.fwdsInDarkMode(@rules) {
+    [data-theme-mode="dark"]:root & { @rules(); }
+    [data-theme-mode="auto"]:root & {
+        @media (prefers-color-scheme: dark) { @rules(); }
+    }
+}
+
+.dashboardSegmentButton,
+.dashboardPeriodButton {
+    cursor: pointer;
+}
+
+// Matomo 5.14+ renders the widget header as a Vue ReportHeader; our buttons live in its reserved,
+// always-visible `.reportHeader__actions` slot (it reveals itself once non-empty). Style them as
+// subtle icon buttons that match the header. (On Matomo <= 5.13 they sit in the legacy `.buttons`
+// toolbar and inherit its styling.)
+// Matomo 5.14+: our buttons live INSIDE the native widget-control cluster
+// (.reportHeader__widgetControls), so they sit in the same hover-revealed icon stack as the native
+// minimize/refresh/… icons — no overlap, no shifted title. Match the native icon-button look (20px
+// button, 16px icon, grey that darkens on hover).
+.reportHeader__widgetControls {
+    .dashboardSegmentButton,
+    .dashboardPeriodButton {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        margin: 0 0 0 2px;
+        padding: 0;
+        line-height: 0;
+        cursor: pointer;
+        color: ~"var(--theme-color-text-light, #9e9e9e)";
+
+        span { font-size: 16px; line-height: 1; }
+        &:hover { color: ~"var(--theme-color-text, #2f3b42)"; }
+    }
+}
+
+// "Current overrides" bar shown below the widget header, holding segment/period chips.
+.dashboardSegmentBar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 8px 12px;
+}
+
+.dashboardSegmentChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 6px 2px 8px;
+    font-size: 11px;
+    line-height: 18px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+}
+
+.dashboardSegmentChipIcon {
+    font-size: 12px;
+    opacity: 0.85;
+}
+
+.dashboardSegmentChipLabel {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+
+// Segment = blue, Period = amber, so the two override types are easy to tell apart. Light values are
+// tuned for the white widget background; the dark variants use a translucent tint + a light label so
+// the chips stay legible on a dark widget.
+.dashboardSegmentChip.is-segment {
+    color: #11406b;
+    background: #cce2fa;
+    border-color: #4a90d9;
+    .fwdsInDarkMode({
+        color: #d6e8fb;
+        background: ~"color-mix(in srgb, #4a90d9 24%, transparent)";
+        border-color: #4a90d9;
+    });
+}
+
+.dashboardSegmentChip.is-period {
+    color: #74500e;
+    background: #f7e1a0;
+    border-color: #dba62b;
+    .fwdsInDarkMode({
+        color: #f3d690;
+        background: ~"color-mix(in srgb, #dba62b 26%, transparent)";
+        border-color: #dba62b;
+    });
+}
+
+.dashboardSegmentRemove {
+    color: ~"var(--theme-color-text-lighter, #8a98a8)";
+    font-size: 15px;
+    line-height: 1;
+    font-weight: bold;
+    text-decoration: none;
+    cursor: pointer;
+
+    &:hover { color: #d9534f; }
+}
+
+.dashboardSegmentMenu {
+    background: ~"var(--theme-color-background-base, #fff)";
+    color: ~"var(--theme-color-text, #212121)";
+    border: 1px solid ~"var(--theme-color-border-alternative, #c5c5c5)";
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    min-width: 220px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+// The segment-picker variant: a search box on top, a scrollable item list, and a "New segment"
+// link at the bottom. (The period picker uses the plain menu above.)
+.dashboardSegmentMenu.dsSearchable {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 260px;
+    max-width: 360px;
+    max-height: 360px;
+
+    .dsMenuSearchWrap {
+        flex: none;
+        padding: 6px;
+        border-bottom: 1px solid ~"var(--theme-color-border-alternative, #e0e0e0)";
+    }
+    .dsMenuSearch {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 8px;
+        font-size: 13px;
+        border: 1px solid ~"var(--theme-color-border-alternative, #ccc)";
+        border-radius: 3px;
+        background: ~"var(--theme-color-background-base, #fff)";
+        color: ~"var(--theme-color-text, #212121)";
+
+        &:focus { border-color: ~"var(--theme-color-link, #1d72b8)"; outline: none; }
+    }
+    .dsMenuList { flex: 1 1 auto; overflow-y: auto; }
+    .dsNewSegment {
+        flex: none;
+        display: block;
+        padding: 8px 12px;
+        border-top: 1px solid ~"var(--theme-color-border-alternative, #e0e0e0)";
+        font-size: 12px;
+    }
+}
+
+.dashboardSegmentItem {
+    padding: 8px 12px;
+    cursor: pointer;
+
+    &:hover { background: ~"var(--theme-color-background-tinyContrast, #f2f2f2)"; }
+    &.active { font-weight: bold; }
+}
+
+.dashboardSegmentDefault {
+    margin: 6px 0 10px;
+    font-size: 13px;
+
+    .dashboardSegmentDefaultValue {
+        font-weight: bold;
+        text-decoration: underline dotted;
+        cursor: pointer;
+    }
+}
+
+// Link-style anchor used by the segment menu ("new segment").
+.dsLink {
+    color: ~"var(--theme-color-link, #1d72b8)";
+    cursor: pointer;
+    text-decoration: underline dotted;
+}
