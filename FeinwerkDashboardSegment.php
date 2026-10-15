@@ -28,8 +28,12 @@ class FeinwerkDashboardSegment extends Plugin
             'SitesManager.deleteSite.end'            => 'deleteSite',
             'Controller.CoreHome.index'              => 'notifySharingMoved',
             'PluginManager.pluginActivated'          => 'onPluginActivated',
+            'Template.beforeDashboardWidgets'        => 'renderDefaultSegmentSlot',
             'FeinwerkDashboardSharing.copyWidgetOverrides'   => 'onCopyWidgetOverrides',
             'FeinwerkDashboardSharing.deleteWidgetOverrides' => 'onDeleteWidgetOverrides',
+            'API.Dashboard.removeDashboard.end'           => 'onDashboardRemoved',
+            'API.Dashboard.createNewDashboardForUser.end' => 'onDashboardCreated',
+            'API.Dashboard.copyDashboardToUser.end'       => 'onDashboardCopied',
         );
     }
 
@@ -64,6 +68,16 @@ class FeinwerkDashboardSegment extends Plugin
         }
     }
 
+    /**
+     * The dashboard's own place for content above the widgets (event posted from Matomo 5.14.1 on, and in
+     * Matomo 6). The script puts the dashboard default segment control into this slot; on older Matomo
+     * versions, which do not post the event, the script inserts the control above the widgets itself.
+     */
+    public function renderDefaultSegmentSlot(&$out)
+    {
+        $out .= '<div id="fwds-default-slot"></div>';
+    }
+
     public function getJsFiles(&$jsFiles)
     {
         $jsFiles[] = 'plugins/FeinwerkDashboardSegment/javascripts/dashboardSegment.js';
@@ -93,6 +107,7 @@ class FeinwerkDashboardSegment extends Plugin
         $keys[] = 'FeinwerkDashboardSegment_PeriodMonth';
         $keys[] = 'FeinwerkDashboardSegment_PeriodYear';
         $keys[] = 'FeinwerkDashboardSegment_SaveError';
+        $keys[] = 'FeinwerkDashboardSegment_SavedReloadHint';
         $keys[] = 'FeinwerkDashboardSegment_NewSegment';
         $keys[] = 'FeinwerkDashboardSegment_SearchSegments';
     }
@@ -146,10 +161,50 @@ class FeinwerkDashboardSegment extends Plugin
         $this->getWidgetSettingsDao()->deleteForDashboard($login, $idDashboard);
     }
 
+    /** Matomo's "Remove dashboard": the dashboard's overrides go with it. */
+    public function onDashboardRemoved(&$returnedValue, $extraInfo)
+    {
+        $parameters = isset($extraInfo['parameters']) ? $extraInfo['parameters'] : array();
+        $login = !empty($parameters['login']) ? $parameters['login'] : $this->getCurrentLogin();
+        $this->deleteOverridesOf($login, isset($parameters['idDashboard']) ? $parameters['idDashboard'] : 0);
+    }
+
+    /**
+     * Matomo gives a new dashboard the highest free id of its user, so overrides left under that id
+     * (a dashboard removed while this plugin was inactive, or before it removed them) would reach it.
+     */
+    public function onDashboardCreated(&$returnedValue, $extraInfo)
+    {
+        $parameters = isset($extraInfo['parameters']) ? $extraInfo['parameters'] : array();
+        $this->deleteOverridesOf(isset($parameters['login']) ? $parameters['login'] : '', $returnedValue);
+    }
+
+    /** "Copy dashboard to user" creates a dashboard for that user: as onDashboardCreated(). */
+    public function onDashboardCopied(&$returnedValue, $extraInfo)
+    {
+        $parameters = isset($extraInfo['parameters']) ? $extraInfo['parameters'] : array();
+        $this->deleteOverridesOf(isset($parameters['copyToUser']) ? $parameters['copyToUser'] : '', $returnedValue);
+    }
+
+    private function deleteOverridesOf($login, $idDashboard)
+    {
+        $idDashboard = (int) $idDashboard;
+        if ($login === '' || $login === null || $idDashboard < 1) {
+            return;
+        }
+        $this->getWidgetSettingsDao()->deleteForDashboard($login, $idDashboard);
+    }
+
     /** Test seam: lets unit tests substitute a fake DAO. */
     protected function getWidgetSettingsDao()
     {
         return new Dao\WidgetSettings();
+    }
+
+    /** Test seam: the current login needs Matomo's container. */
+    protected function getCurrentLogin()
+    {
+        return Piwik::getCurrentUserLogin();
     }
 
     /**

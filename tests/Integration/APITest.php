@@ -9,6 +9,7 @@
 
 namespace Piwik\Plugins\FeinwerkDashboardSegment\tests\Integration;
 
+use Piwik\API\Request;
 use Piwik\Plugins\FeinwerkDashboardSegment\API;
 use Piwik\Plugins\FeinwerkDashboardSegment\Dao\WidgetSettings;
 use Piwik\Tests\Framework\Mock\FakeAccess;
@@ -95,6 +96,49 @@ class APITest extends IntegrationTestCase
 
         $this->expectExceptionMessageMatches('/Invalid idSite/');
         $this->api->setWidgetSegment(5, 0, 'widgetA', 'referrerType==search');
+    }
+
+    public function test_httpApi_paddedStringParameters_areStoredTrimmed()
+    {
+        // Through the API request parser, which no longer trims values on Matomo 6.
+        Request::processRequest('FeinwerkDashboardSegment.setWidgetSegment', array(
+            'idDashboard' => '5', 'idSite' => '1', 'widgetUniqueId' => ' widgetA ', 'segment' => ' referrerType==search ',
+        ));
+        Request::processRequest('FeinwerkDashboardSegment.setWidgetPeriod', array(
+            'idDashboard' => '5', 'idSite' => '1', 'widgetUniqueId' => ' widgetA ', 'period' => ' range ', 'date' => ' last30 ',
+        ));
+        Request::processRequest('FeinwerkDashboardSegment.setDashboardDefaultSegment', array(
+            'idDashboard' => '5', 'idSite' => '1', 'segment' => ' browserCode==ff ',
+        ));
+
+        $settings = $this->api->getWidgetSettings(5, 1);
+        $this->assertSame('browserCode==ff', $settings['default']);
+        $this->assertSame(
+            array('widgetA' => array('segment' => 'referrerType==search', 'period' => 'range', 'date' => 'last30')),
+            $settings['widgets']
+        );
+    }
+
+    public function test_removedDashboard_takesItsOverridesAlong_andANewDashboardStartsClean()
+    {
+        FakeAccess::$superUser = true;
+        $id = (int) Request::processRequest('Dashboard.createNewDashboardForUser', array(
+            'login' => 'alice', 'dashboardName' => 'Two', 'addDefaultWidgets' => '0',
+        ));
+        $this->api->setWidgetSegment($id, 1, 'widgetA', 'referrerType==search');
+        $this->api->setDashboardDefaultSegment($id, 1, 'browserCode==ff');
+
+        Request::processRequest('Dashboard.removeDashboard', array('idDashboard' => (string) $id, 'login' => 'alice'));
+        $this->assertSame(array('default' => null, 'widgets' => array()), $this->api->getWidgetSettings($id, 1));
+
+        // Overrides left under the next free id (e.g. removed while this plugin was inactive) do not reach
+        // the dashboard that Matomo creates under that id.
+        (new WidgetSettings())->setSegment('alice', $id, 1, 'widgetB', 'browserCode==ie');
+        $again = (int) Request::processRequest('Dashboard.createNewDashboardForUser', array(
+            'login' => 'alice', 'dashboardName' => 'Again', 'addDefaultWidgets' => '0',
+        ));
+        $this->assertSame($id, $again);
+        $this->assertSame(array('default' => null, 'widgets' => array()), $this->api->getWidgetSettings($again, 1));
     }
 
     public function provideContainerConfig()

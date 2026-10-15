@@ -19,6 +19,7 @@
         "PeriodMonth": "This month",
         "PeriodYear": "This year",
         "SaveError": "Could not save your change. Please try again.",
+        "SavedReloadHint": "Your change was saved. Please reload the page to see it.",
         "NewSegment": "New segment",
         "SearchSegments": "Search segments"
     }

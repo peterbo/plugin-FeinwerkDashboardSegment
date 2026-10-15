@@ -4,7 +4,7 @@ Choose and persist a **Matomo segment per dashboard widget**, with a dashboard-w
 that individual widgets can override or opt out of.
 
 Matomo's dashboards only support **one global segment** applied to every widget at once. That
-makes mixed dashboards impossible, e.g. an "LLM / AI analysis" dashboard where most widgets
+makes mixed dashboards impossible, for example an "LLM / AI analysis" dashboard where most widgets
 should use an *AI Referrer* segment, but the AI‑chatbot widgets must show **all** data (they have
 no AI referrer by definition). FeinwerkDashboardSegment fixes that.
 
@@ -36,8 +36,8 @@ Documentation and more Plugins for Matomo: [Feinwerk Plugins](https://plugins.fe
 - **Per‑widget segment**: pick a saved segment for any individual widget from a control in its
   header.
 - **Dashboard default**: set one default segment for the whole dashboard; widgets inherit it.
-- **Three states per widget**: inherit the default · a specific segment · **No segment (all data)**
-  (`__none__`) which wins even over a dashboard default.
+- **Three states per widget**: inherit the default · a specific segment · **No segment (all data)**,
+  which wins even over a dashboard default.
 - **Per instance**: the *same* widget can appear twice on a dashboard with *different* segments
   (useful for side‑by‑side comparison).
 - **Per site**: segments are chosen and applied separately for each site; only the current site's
@@ -49,22 +49,19 @@ Documentation and more Plugins for Matomo: [Feinwerk Plugins](https://plugins.fe
 
 Precedence: `per‑widget override (server‑rendered widgets)  >  dashboard default (= the dashboard's global segment)  >  the segment you had before`.
 
-## How it works (no core patches)
+## How it works
 
-The plugin is purely additive: it never modifies Matomo core or the bundled Dashboard plugin,
-so it survives Matomo updates:
+The plugin only adds to Matomo. It does not change Matomo's own files or the bundled Dashboard
+plugin, so Matomo updates keep working:
 
-- It wraps the global `widgetsHelper.loadWidgetAjax` (the single function every widget request
-  flows through) and rewrites the `segment` request parameter per widget instance.
-- A **dashboard default** is applied by setting Matomo's global segment through the same hash-only
-  mechanism the native segment selector uses on a reporting page (`CoreHome.MatomoUrl.updateHash`,
-  no full page reload), so every widget (including reactive ones that bypass the wrapper) filters
-  by it; the plugin restores the segment you had before when you leave the dashboard.
-- Each widget instance is tagged with a stable id stored in the dashboard layout (via the
-  Dashboard plugin's own save), so duplicated widgets stay distinguishable.
-- Overrides live in the plugin's own table `dashboard_widget_settings`, keyed by
-  `(login, iddashboard, idsite, widget instance)`.
-- The segment list reuses the existing `SegmentEditor` segments.
+- Each widget on a dashboard remembers its own segment and time range. If you add the same widget
+  twice, each copy keeps its own choice.
+- A **dashboard default** sets Matomo's normal segment while the dashboard is open, without
+  reloading the page, so every widget follows it, including graphs and the Live! widget. When you
+  leave the dashboard, the segment you had before comes back.
+- Your choices are stored per user, dashboard and website in the plugin's own database table
+  `dashboard_widget_settings`.
+- The picker lists the saved segments of Matomo's segment editor.
 
 To create a **new** segment (e.g. *AI Referrer*), use Matomo's normal segment editor once; it then
 appears in the per‑widget picker.

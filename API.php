@@ -35,6 +35,9 @@ class API extends \Piwik\Plugin\API
     public function setWidgetSegment(int $idDashboard, int $idSite, string $widgetUniqueId, string $segment): void
     {
         $login = $this->checkAndGetLogin($idSite);
+        // Matomo 6 no longer trims request parameters; a value of only spaces clears like ''.
+        $widgetUniqueId = trim($widgetUniqueId);
+        $segment = trim($segment);
 
         if ($segment === '') {
             $this->dao->clearSegment($login, $idDashboard, $idSite, $widgetUniqueId);
@@ -50,6 +53,9 @@ class API extends \Piwik\Plugin\API
     public function setWidgetPeriod(int $idDashboard, int $idSite, string $widgetUniqueId, string $period, string $date): void
     {
         $login = $this->checkAndGetLogin($idSite);
+        $widgetUniqueId = trim($widgetUniqueId);
+        $period = trim($period);
+        $date = trim($date);
 
         if ($period === '') {
             $this->dao->clearPeriod($login, $idDashboard, $idSite, $widgetUniqueId);
@@ -64,6 +70,7 @@ class API extends \Piwik\Plugin\API
     public function setDashboardDefaultSegment(int $idDashboard, int $idSite, string $segment): void
     {
         $login = $this->checkAndGetLogin($idSite);
+        $segment = trim($segment);
 
         if ($segment === '') {
             $this->dao->clearSegment($login, $idDashboard, $idSite, SegmentResolver::DEFAULT_WIDGET_ID);
@@ -90,7 +97,8 @@ class API extends \Piwik\Plugin\API
         return array('default' => $default, 'widgets' => $all);
     }
 
-    private function checkAndGetLogin(int $idSite): string
+    /** Test seam: unit tests replace the access check, which needs Matomo's container. */
+    protected function checkAndGetLogin(int $idSite): string
     {
         Piwik::checkUserIsNotAnonymous();
         // Reject idSite <= 0 explicitly: checkUserHasViewAccess(0) throws for normal users but passes

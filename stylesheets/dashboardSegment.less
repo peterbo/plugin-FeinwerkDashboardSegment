@@ -17,14 +17,11 @@
     cursor: pointer;
 }
 
-// Matomo 5.14+ renders the widget header as a Vue ReportHeader; our buttons live in its reserved,
-// always-visible `.reportHeader__actions` slot (it reveals itself once non-empty). Style them as
-// subtle icon buttons that match the header. (On Matomo <= 5.13 they sit in the legacy `.buttons`
-// toolbar and inherit its styling.)
-// Matomo 5.14+: our buttons live INSIDE the native widget-control cluster
-// (.reportHeader__widgetControls), so they sit in the same hover-revealed icon stack as the native
-// minimize/refresh/… icons — no overlap, no shifted title. Match the native icon-button look (20px
-// button, 16px icon, grey that darkens on hover).
+// Matomo 5.14+ renders the widget header as a Vue ReportHeader. Our buttons live INSIDE its native
+// widget-control cluster (.reportHeader__widgetControls), so they sit in the same hover-revealed icon
+// row as the native refresh/minimise/… icons. (On Matomo <= 5.13 they sit in the legacy `.buttons`
+// toolbar and inherit its styling.) Match the native icon buttons of `.widgetControls`: 20px button,
+// 16px icon, 8px apart, light grey that darkens on hover.
 .reportHeader__widgetControls {
     .dashboardSegmentButton,
     .dashboardPeriodButton {
@@ -33,11 +30,11 @@
         justify-content: center;
         width: 20px;
         height: 20px;
-        margin: 0 0 0 2px;
+        margin: 0 0 0 8px;
         padding: 0;
         line-height: 0;
         cursor: pointer;
-        color: ~"var(--theme-color-text-light, #9e9e9e)";
+        color: ~"var(--theme-color-text-lighter, #646464)";
 
         span { font-size: 16px; line-height: 1; }
         &:hover { color: ~"var(--theme-color-text, #2f3b42)"; }

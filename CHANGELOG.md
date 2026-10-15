@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.1
+
+- Fixed: a segment you pick at the top while a dashboard is still loading now stays. Before, the dashboard default (or
+  your previous segment) could replace it once the dashboard had loaded.
+- Fixed: when you open a shared dashboard you subscribed to, changes the owner made to the segment or time range of a
+  widget now show right away, not only after reloading the page. Needs FeinwerkDashboardSharing 1.0.3 or later.
+- Fixed: removing a dashboard now also removes its segments and time ranges. Before, a dashboard you created later
+  could take them over.
+- Fixed: going from a dashboard with a default segment to a goal page could keep the dashboard's segment.
+- Fixed: opening a dashboard with a dashboard default segment could leave the dashboard empty. The default segment is now
+  applied once the dashboard has loaded.
+- Fixed: when a segment or time range cannot be saved, only the plugin's own notification appears (no second, generic
+  error box and no error in the browser console).
+- If a change was saved but the dashboard could not be updated, a notification asks you to reload the page.
+- The segment and time range buttons in a widget header are spaced and coloured like Matomo's own widget buttons.
+- From Matomo 5.14.1 on, the "Dashboard default segment" control sits in Matomo's own place above the widgets.
+
 ## 0.7.0
 
 - Dashboard sharing has moved to the separate free plugin FeinwerkDashboardSharing. Install it to keep
