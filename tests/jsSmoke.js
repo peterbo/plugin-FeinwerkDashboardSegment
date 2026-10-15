@@ -57,6 +57,12 @@ window.__updateHashCalls = [];
 window.CoreHome = {
     MatomoUrl: {
         hashParsed: { value: { period: 'day', date: 'today', segment: '' } },
+        urlParsed: { value: {} },                                  // the query string part of the URL
+        // what Matomo's pages go by: the hash wins, and an empty hash segment lets the query string's one show through
+        get parsed() {
+            var u = this.urlParsed.value, h = this.hashParsed.value;
+            return { value: Object.assign({}, u, h, { segment: h.segment || u.segment || '' }) };
+        },
         updateHash: function (params) {
             window.__updateHashCalls.push(params.segment);        // the segment we set (raw)
             window.CoreHome.MatomoUrl.hashParsed.value = params;  // hash now reflects it; state survives
@@ -69,7 +75,9 @@ window.piwik = {
     on: function (name, fn) { (window.__piwikHandlers[name] = window.__piwikHandlers[name] || []).push(fn); }
 };
 function postPiwikEvent(name) { (window.__piwikHandlers[name] || []).forEach(function (fn) { fn(); }); }
-window.widgetsHelper = { loadWidgetAjax: function () {} };
+// the widget requests that actually go out (the plugin wraps this at bootstrap), with their segment
+window.__widgetLoads = [];
+window.widgetsHelper = { loadWidgetAjax: function (id, params) { window.__widgetLoads.push((params && params.segment) || ''); return { sent: true }; } };
 window.ajaxHelper = function () {
     return {
         addParams: function () {}, withTokenInUrl: function () {}, setFormat: function () {}, setErrorCallback: function () {},
@@ -533,3 +541,121 @@ setTimeout(function () {
             console.log('SMOKE OK: only dashboard pages count as dashboards; a late answer for a left dashboard is ignored');
         });
 }, 2000);
+
+// ---- entering a dashboard whose default changes the global segment loads its widgets once ----
+// That change reloads the whole dashboard: Matomo aborts every request on a URL change, but the server still computes
+// them. So the widget requests the dashboard sends before the change runs are not sent at all.
+setTimeout(function () {
+    var page = null;
+    var server = { 81: { widgets: {}, defaultAction: { action: 'set', segment: 'browserCode==ff' } } };
+    window.broadcast = {
+        getValueFromHash: function (k) { return page === null ? '' : ({ category: 'Dashboard_Dashboard', subcategory: String(page) })[k] || ''; },
+        getValueFromUrl: function () { return ''; }
+    };
+    window.ajaxHelper = function () {
+        var get = {};
+        return {
+            addParams: function (p, where) { if (where === 'get') { Object.assign(get, p); } },
+            withTokenInUrl: function () {}, setFormat: function () {}, setErrorCallback: function () {},
+            send: function () {
+                if (get.action !== 'getSettings') { return Promise.resolve([]); }
+                return Promise.resolve(JSON.parse(JSON.stringify(server[get.idDashboard] || { widgets: {}, defaultAction: null })));
+            }
+        };
+    };
+    function wait() { return new Promise(function (r) { setTimeout(r, 10); }); }
+    function go(id) { page = id; postPiwikEvent('Dashboard.loadDashboard'); return wait(); }
+    function seg() { return MU.hashParsed.value.segment; }
+    function start() { DS.baselineSegment = null; DS.appliedSegment = null; setHashSeg(''); }
+    // the dashboard creates its widgets in one go; returns the requests that went out and what the calls returned
+    function loadWidgets(n) {
+        var before = window.__widgetLoads.length, results = [];
+        for (var i = 0; i < n; i++) { results.push(window.widgetsHelper.loadWidgetAjax('w' + i, { dsSegId: 'i' + i }, function () {}, function () {})); }
+        return { sent: window.__widgetLoads.slice(before), results: results };
+    }
+    start();
+    go(81)
+        .then(function () {
+            var first = loadWidgets(3);                      // the default waits for exactly this moment
+            if (first.sent.length !== 0) { throw new Error('widget requests before the default is applied must not be sent: ' + JSON.stringify(first.sent)); }
+            if (first.results.some(function (r) { return !r || typeof r.abort !== 'function'; })) { throw new Error('a request not sent must still offer abort()'); }
+            return wait();
+        })
+        .then(function () {
+            if (seg() !== 'browserCode==ff') { throw new Error('the default must be applied once the dashboard loads its widgets, hash segment is ' + JSON.stringify(seg())); }
+            var second = loadWidgets(3);                     // Matomo reloads the dashboard for the new segment
+            if (second.sent.join('|') !== 'browserCode==ff|browserCode==ff|browserCode==ff') { throw new Error('the reloaded dashboard must load its widgets: ' + JSON.stringify(second.sent)); }
+            return go(82);                                   // no default: the restore of the previous segment waits
+        })
+        .then(function () {
+            var first = loadWidgets(2);
+            if (first.sent.length !== 0) { throw new Error('widget requests before the restore runs must not be sent: ' + JSON.stringify(first.sent)); }
+            return wait();
+        })
+        .then(function () {
+            if (seg() !== '') { throw new Error('leaving the dashboard must restore the previous segment, hash segment is ' + JSON.stringify(seg())); }
+            if (loadWidgets(2).sent.join('|') !== '|') { throw new Error('the reloaded dashboard must load its widgets without a segment'); }
+            start();
+            return go(81);
+        })
+        .then(function () {
+            setHashSeg('browserCode==chrome');               // picked by hand while the dashboard loads: it stands
+            if (loadWidgets(2).sent.length !== 2) { throw new Error('with a hand-picked segment the widgets must load right away'); }
+            return wait();
+        })
+        .then(function () {
+            if (seg() !== 'browserCode==chrome') { throw new Error('the hand-picked segment must stand, hash segment is ' + JSON.stringify(seg())); }
+            start();
+            return go(82).then(function () { return go(81); });
+        })
+        .then(function () {
+            var update = MU.updateHash;                      // without MatomoUrl nothing makes sure the dashboard reloads
+            MU.updateHash = undefined;
+            var sent = loadWidgets(2).sent;
+            MU.updateHash = update;
+            if (sent.length !== 2) { throw new Error('without MatomoUrl.updateHash the widgets must load: ' + JSON.stringify(sent)); }
+            return wait();
+        })
+        .then(function () {
+            if (loadWidgets(1).sent.length !== 1) { throw new Error('once the change has run, widget requests go out again'); }
+            // Matomo posts Dashboard.Dashboard.mounted right before it creates the widgets: same result
+            start();
+            return go(82).then(function () { return go(81); });
+        })
+        .then(function () {
+            postPiwikEvent('Dashboard.Dashboard.mounted');
+            if (loadWidgets(2).sent.length !== 0) { throw new Error('widgets created after the mounted event must not be sent before the default is applied'); }
+            return wait();
+        })
+        .then(function () {
+            if (seg() !== 'browserCode==ff' || loadWidgets(2).sent.length !== 2) { throw new Error('after the mounted event the default must be applied and the widgets load'); }
+            // a segment in the query string (a bookmark) and "All visits" as the default: the hash change drops the
+            // segment from the hash, the query string's one shows through, nothing reloads: the widgets must load
+            server[83] = { widgets: {}, defaultAction: { action: 'remove' } };
+            start();
+            MU.urlParsed.value = { segment: 'browserCode==ff' };
+            setHashSeg('browserCode==ff');
+            return go(83);
+        })
+        .then(function () {
+            if (loadWidgets(2).sent.length !== 2) { throw new Error('widgets must load when the change does not reload the dashboard (query segment, default All visits)'); }
+            return wait();
+        })
+        .then(function () {
+            // the query string has the default already, the hash has none: the change reloads nothing either
+            start();
+            MU.urlParsed.value = { segment: 'browserCode==ff' };
+            return go(82).then(function () { return go(81); });
+        })
+        .then(function () {
+            if (loadWidgets(2).sent.length !== 2) { throw new Error('widgets must load when the query string has the default already'); }
+            return wait();
+        })
+        .then(function () {
+            MU.urlParsed.value = {};
+        })
+        .then(function () {
+            delete window.broadcast;
+            console.log('SMOKE OK: widget requests are not sent while a global segment change is about to reload the dashboard');
+        });
+}, 3000);

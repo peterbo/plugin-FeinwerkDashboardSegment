@@ -193,6 +193,14 @@
         var original = window.widgetsHelper.loadWidgetAjax;
         var self = this;
         window.widgetsHelper.loadWidgetAjax = function (widgetUniqueId, widgetParameters, onLoaded, onError) {
+            // The dashboard has its layout and loads its widgets: a global segment change waiting for it runs now.
+            // Dashboard.Dashboard.mounted normally started it already; this covers a mounted event we did not see.
+            markDashboardRendered();
+            if (globalSegmentChangeAhead()) {
+                // That change reloads the whole dashboard right away and Matomo aborts this request then, but the
+                // server would still compute it. Not sending it halves the widget requests on entering the dashboard.
+                return { aborted: true, ajaxRequest: null, abort: function () {} };
+            }
             var params = widgetParameters;
             try {
                 var instanceId = widgetParameters && widgetParameters.dsSegId;
@@ -244,19 +252,24 @@
     // stays empty, so on a dashboard the hash is only changed once the dashboard has rendered.
     var renderedDashboard = null;    // id of the dashboard Matomo last rendered (null: none / loading)
     var pendingGlobalSegment = null; // {value, from, onApplied} to set once the current dashboard has rendered
+    var scheduledGlobalSegment = null; // that change once the dashboard has rendered, until it runs
 
     function dashboardRendered() {
         var id = currentDashboardId();
         return id === null || id === renderedDashboard;
     }
 
+    // Called when Matomo has mounted the dashboard (Dashboard.Dashboard.mounted, once it has its layout and right before
+    // it creates the widgets), when it loads a widget and when a widget has loaded.
     function markDashboardRendered() {
         renderedDashboard = currentDashboardId();
         if (pendingGlobalSegment === null) { return; }
         var pending = pendingGlobalSegment;
         pendingGlobalSegment = null;
-        // after the dashboard's own rendering code has returned
+        scheduledGlobalSegment = pending;
+        // after the dashboard's own rendering code has returned (its widgets are created before this runs)
         window.setTimeout(function () {
+            if (scheduledGlobalSegment === pending) { scheduledGlobalSegment = null; }
             var current = readGlobalSegment();
             // A segment the user picked by hand while the dashboard loaded stands.
             if (current === pending.from && current !== pending.value) { applyGlobalSegmentNow(pending.value); }
@@ -269,6 +282,26 @@
     function forgetRenderedDashboard() {
         renderedDashboard = null;
         pendingGlobalSegment = null;
+        scheduledGlobalSegment = null;
+    }
+
+    // Whether setting the hash segment to `value` changes the segment Matomo's pages go by (MatomoUrl.parsed), which
+    // is what reloads the dashboard. The hash wins over the query string, and an empty segment is dropped from the
+    // hash, so a segment in the query string (a bookmark, a link) shows through again.
+    function hashSegmentChangeReloads(value) {
+        var mu = matomoUrl();
+        if (!mu || typeof mu.updateHash !== 'function' || !mu.parsed || !mu.parsed.value || !mu.urlParsed || !mu.urlParsed.value) {
+            return false;
+        }
+        return (value || mu.urlParsed.value.segment || '') !== (mu.parsed.value.segment || '');
+    }
+
+    // A global segment change will reload the whole dashboard right away: it waits for the dashboard to render or
+    // is about to run, and it changes the segment Matomo's pages go by. Not when the user picked another segment
+    // meanwhile (that one stands).
+    function globalSegmentChangeAhead() {
+        var ahead = pendingGlobalSegment || scheduledGlobalSegment;
+        return ahead !== null && readGlobalSegment() === ahead.from && hashSegmentChangeReloads(ahead.value);
     }
 
     // A later decision found nothing to change: a change still waiting would overwrite it.

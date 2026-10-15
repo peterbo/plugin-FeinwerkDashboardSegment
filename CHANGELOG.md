@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.2
+
+- Opening a dashboard with a default segment, or leaving it again, now loads each widget once when that changes the
+  segment you see. Before, every widget was requested twice, which put extra load on the Matomo server.
+
 ## 0.7.1
 
 - Fixed: a segment you pick at the top while a dashboard is still loading now stays. Before, the dashboard default (or
