@@ -1,6 +1,6 @@
 {
     "name": "FeinwerkDashboardSegment",
-    "version": "0.7.0",
+    "version": "0.7.1",
     "description": "Give every dashboard widget its own segment, plus a dashboard-wide default segment that filters the whole dashboard.",
     "keywords": [
         "dashboard",

@@ -49,10 +49,14 @@
         appliedSegment: null   // encoded global segment we last set for a dashboard default (null = we drive nothing)
     };
 
-    // Current dashboard id from the URL hash (Dashboard uses `subcategory`). null when unknown.
+    // Current dashboard id from the URL hash (category `Dashboard_Dashboard`, the id is the `subcategory`). null on
+    // every other page: goal pages and other reports use numeric subcategories too.
     function currentDashboardId() {
         var broadcast = window.broadcast;
-        var value = (broadcast && (broadcast.getValueFromHash('subcategory') || broadcast.getValueFromUrl('subcategory'))) || '';
+        if (!broadcast) { return null; }
+        var category = broadcast.getValueFromHash('category') || broadcast.getValueFromUrl('category') || '';
+        if (category !== 'Dashboard_Dashboard') { return null; }
+        var value = broadcast.getValueFromHash('subcategory') || broadcast.getValueFromUrl('subcategory') || '';
         var id = parseInt(value, 10);
         return isNaN(id) ? null : id;
     }
@@ -67,12 +71,15 @@
     // Idiomatic Matomo request via ajaxHelper (handles CSRF token + idSite/period/date defaults).
     // NOTE: ajaxHelper auto-injects the page's global `segment`/`period`/`date`, so our own payload
     // uses distinct names (segmentValue / periodValue / dateValue) to avoid being clobbered.
-    function dsAjax(action, getParams, postParams) {
+    // `ownErrorUi`: the caller shows its own notification on failure, so core's generic error box
+    // is switched off for this request (as core does for createErrorNotification: false).
+    function dsAjax(action, getParams, postParams, ownErrorUi) {
         var ajax = new window.ajaxHelper();
         ajax.addParams(window.$.extend({ module: 'FeinwerkDashboardSegment', action: action }, getParams || {}), 'get');
         if (postParams) { ajax.addParams(postParams, 'post'); }
         ajax.withTokenInUrl();
         ajax.setFormat('json');
+        if (ownErrorUi) { ajax.setErrorCallback(null); }
         return ajax.send();
     }
 
@@ -232,10 +239,59 @@
         return (mu && mu.hashParsed && mu.hashParsed.value && mu.hashParsed.value.segment) || '';
     }
 
-    // Set the global segment to `value` ('' clears it). Hash-only via MatomoUrl (no full page
-    // reload), keeping period/date and the rest of the hash, exactly like the native selector.
-    // Returns true if it changed the hash.
-    function applyGlobalSegment(value) {
+    // Matomo aborts every pending request when the URL changes. Changing the global segment while a
+    // dashboard is still loading (its widget list, its layout) aborts that load and the dashboard
+    // stays empty, so on a dashboard the hash is only changed once the dashboard has rendered.
+    var renderedDashboard = null;    // id of the dashboard Matomo last rendered (null: none / loading)
+    var pendingGlobalSegment = null; // {value, from, onApplied} to set once the current dashboard has rendered
+
+    function dashboardRendered() {
+        var id = currentDashboardId();
+        return id === null || id === renderedDashboard;
+    }
+
+    function markDashboardRendered() {
+        renderedDashboard = currentDashboardId();
+        if (pendingGlobalSegment === null) { return; }
+        var pending = pendingGlobalSegment;
+        pendingGlobalSegment = null;
+        // after the dashboard's own rendering code has returned
+        window.setTimeout(function () {
+            var current = readGlobalSegment();
+            // A segment the user picked by hand while the dashboard loaded stands.
+            if (current === pending.from && current !== pending.value) { applyGlobalSegmentNow(pending.value); }
+            if (pending.onApplied) { pending.onApplied(); }
+        }, 0);
+    }
+
+    // Another dashboard (or page) loads: a change still waiting for the old one is dropped without
+    // running its onApplied, so whatever it owed (e.g. restoring the user's segment) stays owed.
+    function forgetRenderedDashboard() {
+        renderedDashboard = null;
+        pendingGlobalSegment = null;
+    }
+
+    // A later decision found nothing to change: a change still waiting would overwrite it.
+    function cancelPendingGlobalSegment() {
+        pendingGlobalSegment = null;
+    }
+
+    // Set the global segment to `value` ('' clears it), right away or once the dashboard has
+    // rendered; `onApplied` runs once it has been set. Returns true if it changed (or will change)
+    // the hash, which reloads the widgets.
+    function applyGlobalSegment(value, onApplied) {
+        if (!dashboardRendered()) {
+            pendingGlobalSegment = { value: value, from: readGlobalSegment(), onApplied: onApplied || null };
+            return true;
+        }
+        var changed = applyGlobalSegmentNow(value);
+        if (onApplied) { onApplied(); }
+        return changed;
+    }
+
+    // Hash-only via MatomoUrl (no full page reload), keeping period/date and the rest of the hash,
+    // exactly like the native selector. Returns true if it changed the hash.
+    function applyGlobalSegmentNow(value) {
         var mu = matomoUrl();
         if (mu && typeof mu.updateHash === 'function' && mu.hashParsed && mu.hashParsed.value) {
             mu.updateHash(window.$.extend({}, mu.hashParsed.value, { segment: value }));
@@ -272,43 +328,63 @@
         }
         if (this.baselineSegment === null) { this.baselineSegment = current; } // capture once
         this.appliedSegment = desired.value;
-        if (current === desired.value) { return false; } // already correct -> no reload
+        if (current === desired.value) { cancelPendingGlobalSegment(); return false; } // already correct -> no reload
         return applyGlobalSegment(desired.value);
     };
 
     // Restore the user's baseline global segment (leaving a defaulted dashboard / entering one
     // without a default). Returns true if it changed the global segment.
+    // A restore deferred until a loading dashboard has rendered stays owed (appliedSegment is kept)
+    // until it has actually run, so leaving that dashboard early still restores on the next page.
     FeinwerkDashboardSegment.restoreBaselineSegment = function () {
-        if (this.appliedSegment === null) { return false; } // we weren't driving anything
+        if (this.appliedSegment === null) { cancelPendingGlobalSegment(); return false; } // we weren't driving anything
+        var self = this;
+        var owed = this.appliedSegment;
         var target = this.baselineSegment || '';
-        var changed = (readGlobalSegment() !== target) && applyGlobalSegment(target);
-        this.appliedSegment = null;
-        return changed;
+        if (readGlobalSegment() === target) {
+            this.appliedSegment = null;
+            cancelPendingGlobalSegment();
+            return false;
+        }
+        return applyGlobalSegment(target, function () {
+            if (self.appliedSegment === owed) { self.appliedSegment = null; } // unless a newer default took over
+        });
     };
 
     // ---- settings + segment list fetch ------------------------------------------------------
 
-    FeinwerkDashboardSegment.fetchSettingsPromise = function () {
+    // Every read of the settings gets a number: an answer that arrives after the answer of a newer read
+    // (another dashboard opened, a re-synced copy read again) is stale and must not overwrite it.
+    var settingsRead = 0;
+
+    FeinwerkDashboardSegment.fetchSettingsPromise = function (ownErrorUi) {
         var self = this;
+        var read = ++settingsRead;
         self.idDashboard = currentDashboardId();
         if (self.idDashboard === null) {
             self.settings = { widgets: {}, defaultAction: null };
             return window.$.Deferred().resolve(self.settings).promise();
         }
-        return dsAjax('getSettings', { idDashboard: self.idDashboard, idSite: currentIdSite() }).then(function (data) {
-            self.settings = {
-                widgets: (data && data.widgets) || {},
-                defaultAction: (data && data.defaultAction) || null
-            };
+        return dsAjax('getSettings', { idDashboard: self.idDashboard, idSite: currentIdSite() }, null, ownErrorUi).then(function (data) {
+            if (read === settingsRead) {
+                self.settings = {
+                    widgets: (data && data.widgets) || {},
+                    defaultAction: (data && data.defaultAction) || null
+                };
+            }
             return self.settings;
         });
     };
 
+    // `callback` runs only for the newest read; a newer one runs its own.
     FeinwerkDashboardSegment.fetchSettings = function (callback) {
         var self = this;
-        this.fetchSettingsPromise().then(function () {
-            if (callback) { callback(); }
+        var promise = this.fetchSettingsPromise();
+        var read = settingsRead;
+        promise.then(function () {
+            if (read === settingsRead && callback) { callback(); }
         }, function () {
+            if (read !== settingsRead) { return; }
             self.settings = { widgets: {}, defaultAction: null };
             if (callback) { callback(); }
         });
@@ -358,36 +434,49 @@
     };
 
     // ---- save -------------------------------------------------------------------------------
+    // Each save resolves true once stored and the settings are re-read, false when it did not
+    // complete. Failures show the plugin's own notification only: the save failed, or it was stored
+    // but the settings could not be re-read (then a reload shows it). It never rejects: ajaxHelper
+    // rejects on every failed request, and a rejection nobody handles would surface as a page error.
+
+    function saveAndRefetch(action, getParams, postParams) {
+        return dsAjax(action, getParams, postParams, true).then(function () {
+            return FeinwerkDashboardSegment.fetchSettingsPromise(true).then(
+                function () { return true; },
+                function () {
+                    notify(_pk_translate('FeinwerkDashboardSegment_SavedReloadHint'), 'warning');
+                    return false;
+                }
+            );
+        }, function () {
+            notifySaveError();
+            return false;
+        });
+    }
 
     FeinwerkDashboardSegment.saveWidget = function (instanceId, segment) {
-        var self = this, id = self.idDashboard;
-        if (id === null || !instanceId) { return window.$.Deferred().reject().promise(); }
-        return dsAjax('saveWidgetSegment',
+        var id = this.idDashboard;
+        if (id === null || !instanceId) { return window.$.Deferred().resolve(false).promise(); }
+        return saveAndRefetch('saveWidgetSegment',
             { idDashboard: id, idSite: currentIdSite(), widgetUniqueId: instanceId },
-            { segmentValue: segment }
-        ).then(function () { return self.fetchSettingsPromise(); },
-               function (e) { notifySaveError(); return window.$.Deferred().reject(e).promise(); });
+            { segmentValue: segment });
     };
 
     FeinwerkDashboardSegment.saveWidgetPeriod = function (instanceId, presetKey) {
-        var self = this, id = self.idDashboard;
-        if (id === null || !instanceId) { return window.$.Deferred().reject().promise(); }
+        var id = this.idDashboard;
+        if (id === null || !instanceId) { return window.$.Deferred().resolve(false).promise(); }
         var preset = presetKey ? presetByKey(presetKey) : null;
-        return dsAjax('saveWidgetPeriod',
+        return saveAndRefetch('saveWidgetPeriod',
             { idDashboard: id, idSite: currentIdSite(), widgetUniqueId: instanceId },
-            { periodValue: preset ? preset.period : '', dateValue: preset ? preset.date : '' }
-        ).then(function () { return self.fetchSettingsPromise(); },
-               function (e) { notifySaveError(); return window.$.Deferred().reject(e).promise(); });
+            { periodValue: preset ? preset.period : '', dateValue: preset ? preset.date : '' });
     };
 
     FeinwerkDashboardSegment.saveDefault = function (segment) {
-        var self = this, id = self.idDashboard;
-        if (id === null) { return window.$.Deferred().reject().promise(); }
-        return dsAjax('saveDashboardDefault',
+        var id = this.idDashboard;
+        if (id === null) { return window.$.Deferred().resolve(false).promise(); }
+        return saveAndRefetch('saveDashboardDefault',
             { idDashboard: id, idSite: currentIdSite() },
-            { segmentValue: segment }
-        ).then(function () { return self.fetchSettingsPromise(); },
-               function (e) { notifySaveError(); return window.$.Deferred().reject(e).promise(); });
+            { segmentValue: segment });
     };
 
     // ---- menus ------------------------------------------------------------------------------
@@ -536,7 +625,7 @@
                 FeinwerkDashboardSegment.segmentName(segVal),
                 _pk_translate('FeinwerkDashboardSegment_RemoveSegment'),
                 isReadOnlyDashboard() ? null : function () {
-                    FeinwerkDashboardSegment.saveWidget(instanceId, NONE).then(function () { refreshBar($el); reloadWidgetEl($el); });
+                    FeinwerkDashboardSegment.saveWidget(instanceId, NONE).then(function (saved) { if (saved) { refreshBar($el); reloadWidgetEl($el); } });
                 }
             ));
         }
@@ -551,7 +640,7 @@
                 preset ? _pk_translate(preset.label) : perKey,
                 _pk_translate('FeinwerkDashboardSegment_RemovePeriod'),
                 isReadOnlyDashboard() ? null : function () {
-                    FeinwerkDashboardSegment.saveWidgetPeriod(instanceId, '').then(function () { refreshBar($el); reloadWidgetEl($el); });
+                    FeinwerkDashboardSegment.saveWidgetPeriod(instanceId, '').then(function (saved) { if (saved) { refreshBar($el); reloadWidgetEl($el); } });
                 }
             ));
         }
@@ -593,8 +682,8 @@
     }
 
     // Insert the per-widget segment/period buttons into the widget header.
-    //   - Matomo 5.14+ renders the header as a Vue ReportHeader; its reserved, initially-empty
-    //     `.reportHeader__actions` slot is our host. It mounts a tick AFTER widget:create, so we
+    //   - Matomo 5.14+ renders the header as a Vue ReportHeader; its widget-control cluster
+    //     (`.reportHeader__widgetControls`) is our host. It mounts a tick AFTER widget:create, so we
     //     retry briefly until it (or the legacy toolbar) exists.
     //   - Matomo <= 5.13 uses the legacy `.widgetTop .buttons` toolbar.
     function injectWidgetButtons(widget, $top, attempt) {
@@ -620,7 +709,9 @@
             e.stopPropagation();
             openSegmentMenu($segBtn, FeinwerkDashboardSegment.currentWidgetValue(instanceIdOf(widget)), function (value) {
                 var id = ensureInstanceId(widget);
-                FeinwerkDashboardSegment.saveWidget(id, value).then(function () { refreshBar(widget.element); reloadWidgetEl(widget.element); });
+                FeinwerkDashboardSegment.saveWidget(id, value).then(function (saved) {
+                    if (saved) { refreshBar(widget.element); reloadWidgetEl(widget.element); }
+                });
             });
         });
 
@@ -630,7 +721,9 @@
             e.stopPropagation();
             openPeriodMenu($perBtn, FeinwerkDashboardSegment.currentPeriodKey(instanceIdOf(widget)), function (key) {
                 var id = ensureInstanceId(widget);
-                FeinwerkDashboardSegment.saveWidgetPeriod(id, key).then(function () { refreshBar(widget.element); reloadWidgetEl(widget.element); });
+                FeinwerkDashboardSegment.saveWidgetPeriod(id, key).then(function (saved) {
+                    if (saved) { refreshBar(widget.element); reloadWidgetEl(widget.element); }
+                });
             });
         });
 
@@ -690,14 +783,18 @@
             .text(_pk_translate('FeinwerkDashboardSegment_DashboardDefaultSegment') + ': '));
         var $value = window.$('<a href="javascript:;" class="dashboardSegmentDefaultValue"></a>');
         $ctrl.append($value);
-        $area.before($ctrl);
+        // Slot rendered above the widgets via Template.beforeDashboardWidgets (Matomo >= 5.14.1 and 6);
+        // older versions do not post that event.
+        var $slot = window.$('#fwds-default-slot');
+        if ($slot.length) { $slot.append($ctrl); } else { $area.before($ctrl); }
 
         function render() { $value.text(self.defaultLabel()); }
 
         $value.on('click', function (e) {
             e.stopPropagation();
             openSegmentMenu($value, self.currentDefaultValue(), function (value) {
-                self.saveDefault(value).then(function () {
+                self.saveDefault(value).then(function (saved) {
+                    if (!saved) { return; }
                     render();
                     // Changing the default drives the global segment live; only reload widgets
                     // ourselves when that did not already navigate (which reloads everything).
@@ -748,6 +845,7 @@
     function enterDashboard() {
         FeinwerkDashboardSegment.installWrapper();
         if (currentDashboardId() === null) {
+            settingsRead++; // an answer still on its way belongs to the dashboard the user left
             FeinwerkDashboardSegment.restoreBaselineSegment(); // left all dashboards -> restore the user's segment
             return;
         }
@@ -765,6 +863,7 @@
         // Also (idempotently) ensure the default control exists whenever widgets render.
         window.$(document).on('widget:create', function (e, widget) {
             if (!widget || !widget.uniqueId) { return; }
+            markDashboardRendered(); // layout and widget list are loaded once widgets are created
             if (!isReadOnlyDashboard()) {
                 FeinwerkDashboardSegment.injectDefaultControl();
             }
@@ -791,6 +890,7 @@
             // (object-based decorateWidget re-adds the pickers); the default control follows.
             var id = currentDashboardId();
             var $area = window.$('#dashboardWidgetsArea');
+            forgetRenderedDashboard(); // the dashboard renders again
             try {
                 if (id !== null && $area.length && typeof $area.dashboard === 'function') {
                     $area.dashboard('loadDashboard', id, true);
@@ -802,6 +902,29 @@
         };
         window.$(document).on('fwsh:readonlychange', function () { FeinwerkDashboardSegment.onReadOnlyChange(); });
 
+        // The Sharing plugin re-synced a subscribed copy on the server (layout and per-widget overrides)
+        // and reloads it: the overrides read for this page are stale, read them again.
+        FeinwerkDashboardSegment.onSynced = function (idDashboard) {
+            var id = currentDashboardId();
+            if (id === null || String(idDashboard) !== String(id)) { return; }
+            var before = JSON.stringify(FeinwerkDashboardSegment.settings);
+            forgetRenderedDashboard(); // the copy renders again; a global segment change waits for it
+            FeinwerkDashboardSegment.fetchSettings(function () {
+                var changed = JSON.stringify(FeinwerkDashboardSegment.settings) !== before;
+                // Widgets created before the answer loaded with the old overrides, later ones use the new.
+                var rendered = dashboardRendered();
+                if (!FeinwerkDashboardSegment.syncGlobalSegmentForDashboard() && changed && rendered) {
+                    FeinwerkDashboardSegment.reloadAllWidgets();
+                }
+                if (changed) {
+                    FeinwerkDashboardSegment.loadSegments(function () {
+                        window.$('[widgetId]').each(function () { refreshBar(window.$(this)); });
+                    });
+                }
+            });
+        };
+        window.$(document).on('fwsh:synced', function (e, idDashboard) { FeinwerkDashboardSegment.onSynced(idDashboard); });
+
         enterDashboard();
 
         var lastContext = currentIdSite() + '|' + currentDashboardId();
@@ -809,6 +932,7 @@
             var ctx = currentIdSite() + '|' + currentDashboardId();
             if (ctx === lastContext) { return; }
             lastContext = ctx;
+            forgetRenderedDashboard(); // another dashboard (or site) is loading now
             FeinwerkDashboardSegment.segments = null;
             window.$('#dashboardSegmentDefault').remove();
             enterDashboard();
@@ -816,6 +940,7 @@
         window.$(window).on('hashchange', onContextMaybeChanged);
         if (window.piwik && window.piwik.on) {
             window.piwik.on('Dashboard.loadDashboard', onContextMaybeChanged);
+            window.piwik.on('Dashboard.Dashboard.mounted', markDashboardRendered);
         }
     });
 })();

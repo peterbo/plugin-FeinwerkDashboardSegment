@@ -19,6 +19,7 @@
         "PeriodMonth": "Dieser Monat",
         "PeriodYear": "Dieses Jahr",
         "SaveError": "Ihre Änderung konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+        "SavedReloadHint": "Ihre Änderung wurde gespeichert. Bitte laden Sie die Seite neu, um sie zu sehen.",
         "NewSegment": "Neues Segment",
         "SearchSegments": "Segment suchen"
     }
